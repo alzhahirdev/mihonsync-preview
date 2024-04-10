@@ -61,7 +61,7 @@ jobs:
           
           prev_release="${{ steps.last_release.outputs.tag_name }}"
           if [[ -z "$prev_release" ]]; then
-            commit_count_diff=$(expr $commit_count)
+            commit_count_diff=1
           else
             prev_commit_count=$(echo "${{ steps.last_release.outputs.tag_name }}" | sed -e "s/^r//")
             commit_count_diff=$(expr $commit_count - $prev_commit_count)
