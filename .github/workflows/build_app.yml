@@ -59,7 +59,7 @@ jobs:
           current_sha=$(git rev-parse --short HEAD)
           echo "CURRENT_SHA=$current_sha" >> $GITHUB_ENV
           
-          prev_release = echo "${{ steps.last_release.outputs.tag_name }}"
+          prev_release=$(echo "${{ steps.last_release.outputs.tag_name }}")
           if [ prev_release = '' ]; then
             commit_count_diff=$(expr $commit_count)
           else
