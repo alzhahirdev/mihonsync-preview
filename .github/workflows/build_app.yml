@@ -60,7 +60,7 @@ jobs:
           echo "CURRENT_SHA=$current_sha" >> $GITHUB_ENV
           
           prev_release="${{ steps.last_release.outputs.tag_name }}"
-          if [ prev_release = '' ]; then
+          if [ $prev_release = '' ]; then
             commit_count_diff=$(expr $commit_count)
           else
             prev_commit_count=$(echo "${{ steps.last_release.outputs.tag_name }}" | sed -e "s/^r//")
