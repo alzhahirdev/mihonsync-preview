@@ -1,9 +1,6 @@
 name: Build job
 
 on:
-  # Every Saturday at 21:00 UTC
-  schedule:
-    - cron: '0 21 * * 6'
   # Manual triggers
   workflow_dispatch:
     inputs:
@@ -15,17 +12,19 @@ on:
         required: false
 
 jobs:
-  build-app:
-    runs-on: ubuntu-latest
+  build:
+    name: Build app
+    runs-on: 'ubuntu-24.04'
+
     steps:
       - name: Clone Repository (Latest)
-        uses: actions/checkout@44c2b7a8a4ea60a981eaca3cf939b5f4305c123b # v4.1.5
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: 'alzhahirdev/mihonsync'
           fetch-depth: 0
         if: github.event.inputs.git-ref == ''
       - name: Clone Repository (Custom Ref)
-        uses: actions/checkout@44c2b7a8a4ea60a981eaca3cf939b5f4305c123b # v4.1.5
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         if: github.event.inputs.git-ref != ''
         with:
           repository: 'alzhahirdev/mihonsync'
@@ -33,24 +32,37 @@ jobs:
           ref: ${{ github.event.inputs.git-ref }}
 
       - name: Set up JDK
-        uses: actions/setup-java@99b8673ff64fbf99d8d325f52d9a5bdedb8483e9 # v4.2.1
+        uses: actions/setup-java@3a4f6e1af504cf6a31855fa899c6aa5355ba6c12 # v4.7.0
         with:
           java-version: 17
-          distribution: adopt
+          distribution: temurin
 
-      - name: Setup Android SDK
-        run: |
-          ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager "build-tools;29.0.3"
+      - name: Set up gradle
+        uses: gradle/actions/setup-gradle@94baf225fe0a508e581a564467443d0e2379123b # v4.3.0
+
+      - name: Build APK
+        run: ./gradlew assemblePreview -Pinclude-telemetry -Penable-updater
+
+      - name: Sign APK
+        uses: r0adkll/sign-android-release@f30bdd30588842ac76044ecdbd4b6d0e3e813478
+        with:
+          releaseDirectory: app/build/outputs/apk/preview
+          signingKeyBase64: ${{ secrets.SIGNING_KEY }}
+          alias: ${{ secrets.ALIAS }}
+          keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
+          keyPassword: ${{ secrets.KEY_PASSWORD }}
+        env:
+          BUILD_TOOLS_VERSION: '35.0.1'
 
       - name: Get previous release
         id: last_release
         uses: InsonusK/get-latest-release@7a9ff16c8c6b7ead5d71c0f1cc61f2703170eade # v1.1.0
         with:
           myToken: ${{ github.token }}
-          exclude_types: "draft|prerelease"
+          exclude_types: 'draft|prerelease'
           view_top: 1
 
-      - name: Prepare build
+      - name: Prepare changelog
         run: |
           set -e
 
@@ -58,14 +70,9 @@ jobs:
           echo "COMMIT_COUNT=$commit_count" >> $GITHUB_ENV
           current_sha=$(git rev-parse --short HEAD)
           echo "CURRENT_SHA=$current_sha" >> $GITHUB_ENV
-          
-          prev_release="${{ steps.last_release.outputs.tag_name }}"
-          if [[ -z "$prev_release" ]]; then
-            commit_count_diff=1
-          else
-            prev_commit_count=$(echo "${{ steps.last_release.outputs.tag_name }}" | sed -e "s/^r//")
-            commit_count_diff=$(expr $commit_count - $prev_commit_count)
-          fi
+
+          prev_commit_count=$(echo "${{ steps.last_release.outputs.tag_name }}" | sed -e "s/^r//")
+          commit_count_diff=$(expr $commit_count - $prev_commit_count)
           prev_release_sha=$(git rev-parse --short HEAD~$commit_count_diff)
           echo "PREV_RELEASE_SHA=$prev_release_sha" >> $GITHUB_ENV
 
@@ -76,47 +83,32 @@ jobs:
             | jq -r '.[]|"- \(.message | first) (@\(.username))"')
           {delimiter}" >> $GITHUB_ENV
 
-      - name: Set up gradle
-        uses: gradle/actions/setup-gradle@db19848a5fa7950289d3668fb053140cf3028d43 # v3.3.2
-
-      - name: Build APK
-        run: ./gradlew assembleStandardPreview
-
-      - name: Sign APK
-        uses: r0adkll/sign-android-release@349ebdef58775b1e0d8099458af0816dc79b6407 # v1
-        with:
-          releaseDirectory: app/build/outputs/apk/standard/preview
-          signingKeyBase64: ${{ secrets.SIGNING_KEY }}
-          alias: ${{ secrets.ALIAS }}
-          keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
-          keyPassword: ${{ secrets.KEY_PASSWORD }}
-
       - name: Clean up build artifacts
         run: |
           set -e
 
-          cp app/build/outputs/apk/standard/preview/app-standard-universal-preview-signed.apk mihonsync-r${{ env.COMMIT_COUNT }}.apk
+          cp app/build/outputs/apk/preview/app-universal-preview-signed.apk mihonsync-r${{ env.COMMIT_COUNT }}.apk
           sha=`sha256sum mihonsync-r${{ env.COMMIT_COUNT }}.apk | awk '{ print $1 }'`
           echo "APK_UNIVERSAL_SHA=$sha" >> $GITHUB_ENV
 
-          cp app/build/outputs/apk/standard/preview/app-standard-arm64-v8a-preview-signed.apk mihonsync-arm64-v8a-r${{ env.COMMIT_COUNT }}.apk
+          cp app/build/outputs/apk/preview/app-arm64-v8a-preview-signed.apk mihonsync-arm64-v8a-r${{ env.COMMIT_COUNT }}.apk
           sha=`sha256sum mihonsync-arm64-v8a-r${{ env.COMMIT_COUNT }}.apk | awk '{ print $1 }'`
           echo "APK_ARM64_V8A_SHA=$sha" >> $GITHUB_ENV
 
-          cp app/build/outputs/apk/standard/preview/app-standard-armeabi-v7a-preview-signed.apk mihonsync-armeabi-v7a-r${{ env.COMMIT_COUNT }}.apk
+          cp app/build/outputs/apk/preview/app-armeabi-v7a-preview-signed.apk mihonsync-armeabi-v7a-r${{ env.COMMIT_COUNT }}.apk
           sha=`sha256sum mihonsync-armeabi-v7a-r${{ env.COMMIT_COUNT }}.apk | awk '{ print $1 }'`
           echo "APK_ARMEABI_V7A_SHA=$sha" >> $GITHUB_ENV
 
-          cp app/build/outputs/apk/standard/preview/app-standard-x86-preview-signed.apk mihonsync-x86-r${{ env.COMMIT_COUNT }}.apk
+          cp app/build/outputs/apk/preview/app-x86-preview-signed.apk mihonsync-x86-r${{ env.COMMIT_COUNT }}.apk
           sha=`sha256sum mihonsync-x86-r${{ env.COMMIT_COUNT }}.apk | awk '{ print $1 }'`
           echo "APK_X86_SHA=$sha" >> $GITHUB_ENV
 
-          cp app/build/outputs/apk/standard/preview/app-standard-x86_64-preview-signed.apk mihonsync-x86_64-r${{ env.COMMIT_COUNT }}.apk
+          cp app/build/outputs/apk/preview/app-x86_64-preview-signed.apk mihonsync-x86_64-r${{ env.COMMIT_COUNT }}.apk
           sha=`sha256sum mihonsync-x86_64-r${{ env.COMMIT_COUNT }}.apk | awk '{ print $1 }'`
           echo "APK_X86_64_SHA=$sha" >> $GITHUB_ENV
 
       - name: Create release
-        uses: softprops/action-gh-release@69320dbe05506a9a39fc8ae11030b214ec2d1f87 # v2.0.5
+        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1
         with:
           tag_name: r${{ env.COMMIT_COUNT }}
           name: MihonSync Preview r${{ env.COMMIT_COUNT }}
@@ -149,12 +141,12 @@ jobs:
           draft: ${{ github.event.inputs.dry-run != '' }}
           prerelease: false
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.MIHON_BOT_TOKEN }}
 
       - name: Prune old releases
-        uses: dev-drprasad/delete-older-releases@0bf4e6748f08135170c2294f877ba7d9b633b028 # v0.3.3
+        uses: dev-drprasad/delete-older-releases@dfbe6be2a006e9475dfcbe5b8d201f1824c2a9fe # v0.3.4
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.MIHON_BOT_TOKEN }}
         with:
           keep_latest: 28
           delete_tags: true
