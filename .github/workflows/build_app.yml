@@ -78,10 +78,12 @@ jobs:
             prev_commit_count=$(echo "${{ steps.last_release.outputs.tag_name }}" | sed -e "s/^r//")
             commit_count_diff=$(expr $commit_count - $prev_commit_count)
           fi
+          prev_release_sha=$(git rev-parse --short HEAD~$commit_count_diff)
+          echo "PREV_RELEASE_SHA=$prev_release_sha" >> $GITHUB_ENV
 
           echo "COMMIT_LOGS<<{delimiter}
           $(curl -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/alzhahirdev/mihonsync/compare/${{ env.PREV_RELEASE_SHA }}...$current_sha" \
+            "https://api.github.com/repos/alzhahirdev/mihonsync/compare/$prev_release_sha...$current_sha" \
             | jq '[.commits[]|{message:(.commit.message | split("\n")), username:.author.login}]' \
             | jq -r '.[]|"- \(.message | first) (@\(.username))"')
           {delimiter}" >> $GITHUB_ENV
